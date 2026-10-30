@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>복지업무 도우미</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <div class="page-head">
+    <h1>복지업무 도우미</h1>
+    <p>주민센터 사회복지 업무를 위한 참조문서 검색과 행정 보조 도구 모음</p>
+  </div>
+
+  <form class="card" action="docs.html" method="get">
+    <label for="q">참조문서 검색</label>
+    <div class="row">
+      <input type="search" id="q" name="q" placeholder="법령, 사업안내, 신청 사이트, 내 문서를 한 번에 검색" style="flex:1;min-width:220px">
+      <button class="btn primary" type="submit">검색</button>
+    </div>
+    <div class="chips" style="margin-top:10px" id="quick"></div>
+  </form>
+
+  <div class="grid grid-3">
+    <a class="tile" href="docs.html"><div class="ico">🔎</div><h3>참조문서 검색</h3><p>법령·지침·기관 사이트 분류 검색, 내 문서 등록, 결과 목록 복사</p></a>
+    <a class="tile" href="calc.html"><div class="ico">🧮</div><h3>선정기준 계산</h3><p>가구원 수별 기준 중위소득과 급여별 선정기준, 생계급여 예상액</p></a>
+    <a class="tile" href="checklist.html"><div class="ico">📋</div><h3>구비서류 체크리스트</h3><p>사업별 신청 서류를 확인하고 민원인 안내용으로 인쇄</p></a>
+    <a class="tile" href="deadline.html"><div class="ico">📅</div><h3>처리기한 계산</h3><p>결정·이의신청·행정심판 기한을 공휴일까지 반영해 계산</p></a>
+    <a class="tile" href="counsel.html"><div class="ico">📝</div><h3>상담기록 작성</h3><p>초기상담 항목을 채우면 상담일지 문장으로 정리</p></a>
+    <a class="tile" href="templates.html"><div class="ico">💬</div><h3>안내 문구</h3><p>서류 보완·결정 안내·확인조사 문자와 안내문 틀</p></a>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>올해 기준 한눈에</h2>
+    <div class="table-wrap" id="summary"></div>
+    <p class="muted" style="margin:8px 0 0;font-size:.85rem" id="summarySrc"></p>
+  </div>
+</main>
+
+<script src="assets/common.js"></script>
+<script src="assets/data.js"></script>
+<script>
+const QUICK = ["부양의무자", "이의신청", "긴급지원", "기초연금", "주거급여", "장애인 등록", "행정심판"];
+document.getElementById("quick").innerHTML = QUICK.map((w) =>
+  `<a class="chip" style="text-decoration:none" href="docs.html?q=${encodeURIComponent(w)}">${w}</a>`).join("");
+
+const D = WELFARE_DATA.medianIncome;
+const year = D[new Date().getFullYear()] ? new Date().getFullYear() : Math.max(...Object.keys(D).map(Number));
+const y = D[year];
+const sizes = [1, 2, 3, 4];
+document.getElementById("summary").innerHTML = `<table>
+  <thead><tr><th>${year}년 (월)</th>${sizes.map((n) => `<th class="num">${n}인</th>`).join("")}</tr></thead>
+  <tbody>
+    <tr><td>기준 중위소득</td>${sizes.map((n) => `<td class="num">${App.won(y.amounts[n])}</td>`).join("")}</tr>
+    ${Object.entries(y.rates).map(([k, r]) => `<tr><td>${k} (${r}%)</td>${sizes.map((n) =>
+      `<td class="num">${y.amounts[n] ? App.won(Math.floor(y.amounts[n] * r / 100)) : "-"}</td>`).join("")}</tr>`).join("")}
+  </tbody></table>`;
+document.getElementById("summarySrc").textContent = "출처: " + y.source + " · 원 단위 버림. 5인 이상은 선정기준 계산 페이지에서 확인";
+</script>
+</body>
+</html>

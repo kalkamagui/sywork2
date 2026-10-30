@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>안내 문구 · 복지업무 도우미</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .tpl-list button { width: 100%; justify-content: flex-start; text-align: left; margin-bottom: 6px; white-space: normal; }
+  .tpl-list button.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+</style>
+</head>
+<body>
+<main>
+  <div class="page-head">
+    <h1>안내 문구</h1>
+    <p>자주 보내는 문자·안내문을 고르고 빈칸만 채워 복사합니다. <code>{항목}</code> 형태로 내 문구를 만들 수도 있습니다.</p>
+  </div>
+
+  <div class="grid" style="grid-template-columns:260px minmax(0,1fr)" id="layout">
+    <div class="card tpl-list">
+      <h2>문구 목록</h2>
+      <div id="list"></div>
+      <button class="btn primary" id="newBtn" style="margin-top:8px">+ 내 문구 만들기</button>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="row" style="margin-bottom:10px"><h2 style="margin:0" id="tplName"></h2><span class="spacer"></span>
+          <button class="btn sm" id="editBtn">문구 편집</button><button class="btn sm" id="delBtn" hidden>삭제</button></div>
+        <div class="grid grid-3" id="vars"></div>
+      </div>
+
+      <div class="card" id="editor" hidden>
+        <div class="field"><label for="eName">제목</label><input type="text" id="eName"></div>
+        <div class="field"><label for="eBody">본문 (빈칸은 {항목명})</label><textarea id="eBody" style="min-height:180px"></textarea></div>
+        <div class="row"><button class="btn primary" id="eSave">내 문구로 저장</button><button class="btn" id="eCancel">닫기</button></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin-bottom:8px"><h2 style="margin:0">완성된 문구</h2><span class="spacer"></span>
+          <small id="bytes"></small><button class="btn primary" id="copy">복사</button></div>
+        <div class="output" id="out"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="assets/common.js"></script>
+<script>
+const BUILTIN = [
+  { id: "b1", name: "서류 보완 요청 (문자)", body: "[{기관명}] {대상자}님, 신청하신 {사업명} 처리를 위해 {서류} 제출이 필요합니다. {기한}까지 주민센터로 제출해 주세요. 문의 {담당자} {연락처}" },
+  { id: "b2", name: "신청 접수 안내 (문자)", body: "[{기관명}] {대상자}님, {접수일}에 {사업명} 신청이 접수되었습니다. 소득·재산 조사 후 결과를 알려드리며, 처리까지 약 30일(최대 60일) 걸릴 수 있습니다. 문의 {담당자} {연락처}" },
+  { id: "b3", name: "결정 결과 확인 안내 (문자)", body: "[{기관명}] {대상자}님, 신청하신 {사업명}의 결과 통지서를 발송했습니다. 결과에 이의가 있으시면 통지를 받은 날부터 90일 이내에 이의신청하실 수 있습니다. 문의 {담당자} {연락처}" },
+  { id: "b4", name: "확인조사 안내 (문자)", body: "[{기관명}] {대상자}님, 수급 자격 확인조사 결과 소득·재산 변동이 확인되어 소명이 필요합니다. {기한}까지 {서류}를 제출하거나 담당자에게 연락해 주세요. 기한 내 소명이 없으면 급여가 변경될 수 있습니다. 문의 {담당자} {연락처}" },
+  { id: "b5", name: "가정방문 일정 안내 (문자)", body: "[{기관명}] {대상자}님, {사업명} 관련 상담을 위해 {방문일시}에 댁으로 방문할 예정입니다. 일정 변경이 필요하시면 연락 주세요. {담당자} {연락처}" },
+  { id: "b6", name: "정기 변동신고 안내 (문자)", body: "[{기관명}] {대상자}님, 취업·퇴직, 이사, 가족 변동, 재산 변동이 있으시면 주민센터에 꼭 신고해 주세요. 신고하지 않으면 급여가 환수될 수 있습니다. 문의 {담당자} {연락처}" },
+  { id: "b7", name: "타 기관 연계 의뢰 (공문 본문)", body: "1. 귀 기관의 무궁한 발전을 기원합니다.\n2. 우리 동에서 상담 중인 위기가구에 대하여 아래와 같이 {서비스} 연계를 의뢰하오니 협조하여 주시기 바랍니다.\n\n  가. 대상: {대상자} ({가구유형})\n  나. 의뢰 사유: {의뢰사유}\n  다. 요청 사항: {요청사항}\n  라. 담당: {기관명} {담당자} ({연락처})\n\n붙임  1. 서비스 의뢰서 1부.\n      2. 개인정보 제공 동의서 1부.  끝." },
+];
+
+const $ = (id) => document.getElementById(id);
+let mine = App.load("myTemplates", []);
+let current = BUILTIN[0];
+let values = App.load("tplCommon", {}); // 기관명·담당자·연락처처럼 반복되는 값만 기억
+
+const all = () => BUILTIN.concat(mine);
+const varsOf = (body) => [...new Set([...body.matchAll(/\{([^{}]+)\}/g)].map((m) => m[1]))];
+const REMEMBER = ["기관명", "담당자", "연락처"];
+
+function renderList() {
+  $("list").innerHTML = all().map((t) => `<button class="btn${t.id === current.id ? " on" : ""}" data-id="${t.id}">${App.esc(t.name)}${t.id.startsWith("m") ? ' <span class="badge primary">내 문구</span>' : ""}</button>`).join("");
+}
+
+function renderVars() {
+  $("tplName").textContent = current.name;
+  $("delBtn").hidden = !current.id.startsWith("m");
+  $("vars").innerHTML = varsOf(current.body).map((v) => `<div class="field" style="margin:0"><label>${App.esc(v)}</label>
+    <input type="text" data-var="${App.esc(v)}" value="${App.esc(values[v] || "")}"></div>`).join("") || '<p class="muted">빈칸이 없는 문구입니다.</p>';
+  renderOut();
+}
+
+function fill() {
+  return current.body.replace(/\{([^{}]+)\}/g, (_, v) => (values[v] ? values[v] : `{${v}}`));
+}
+
+// 문자 요금 기준(EUC-KR): 한글 2바이트, 영문·숫자 1바이트. 90바이트 초과 시 장문(LMS)
+function bytes(s) { let b = 0; for (const ch of s) b += ch.charCodeAt(0) > 127 ? 2 : 1; return b; }
+
+function renderOut() {
+  const text = fill();
+  $("out").textContent = text;
+  const b = bytes(text);
+  $("bytes").innerHTML = `${b}바이트 <span class="badge ${b <= 90 ? "ok" : b <= 2000 ? "warn" : "bad"}">${b <= 90 ? "단문" : b <= 2000 ? "장문" : "초과"}</span>`;
+}
+
+$("list").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-id]");
+  if (!b) return;
+  current = all().find((t) => t.id === b.dataset.id);
+  $("editor").hidden = true;
+  renderList(); renderVars();
+});
+$("vars").addEventListener("input", (e) => {
+  const v = e.target.dataset.var;
+  if (!v) return;
+  values[v] = e.target.value;
+  App.save("tplCommon", Object.fromEntries(REMEMBER.filter((k) => values[k]).map((k) => [k, values[k]])));
+  renderOut();
+});
+$("copy").addEventListener("click", () => {
+  const text = fill();
+  if (/\{[^{}]+\}/.test(text) && !confirm("아직 채우지 않은 빈칸이 있습니다. 그대로 복사할까요?")) return;
+  App.copy(text);
+});
+
+function openEditor(t) {
+  $("editor").hidden = false;
+  $("eName").value = t ? t.name + (t.id.startsWith("b") ? " (수정본)" : "") : "";
+  $("eBody").value = t ? t.body : "[{기관명}] {대상자}님, ";
+  $("eSave").dataset.id = t && t.id.startsWith("m") ? t.id : "";
+  $("eName").focus();
+}
+$("newBtn").addEventListener("click", () => openEditor(null));
+$("editBtn").addEventListener("click", () => openEditor(current));
+$("eCancel").addEventListener("click", () => ($("editor").hidden = true));
+$("eSave").addEventListener("click", () => {
+  const name = $("eName").value.trim(), body = $("eBody").value;
+  if (!name || !body.trim()) return alert("제목과 본문을 입력하세요.");
+  const id = $("eSave").dataset.id || "m" + Date.now();
+  const t = { id, name, body };
+  mine = mine.some((x) => x.id === id) ? mine.map((x) => (x.id === id ? t : x)) : mine.concat(t);
+  App.save("myTemplates", mine);
+  current = t;
+  $("editor").hidden = true;
+  App.toast("저장했습니다");
+  renderList(); renderVars();
+});
+$("delBtn").addEventListener("click", () => {
+  if (!confirm("이 문구를 삭제할까요?")) return;
+  mine = mine.filter((x) => x.id !== current.id);
+  App.save("myTemplates", mine);
+  current = BUILTIN[0];
+  renderList(); renderVars();
+});
+
+const mq = matchMedia("(max-width: 760px)");
+const applyLayout = () => ($("layout").style.gridTemplateColumns = mq.matches ? "1fr" : "260px minmax(0,1fr)");
+mq.addEventListener("change", applyLayout);
+applyLayout();
+
+renderList();
+renderVars();
+</script>
+</body>
+</html>

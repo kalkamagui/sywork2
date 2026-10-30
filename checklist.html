@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>구비서류 체크리스트 · 복지업무 도우미</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .item { padding: 8px 0; border-bottom: 1px dashed var(--line); }
+  .item:last-child { border-bottom: 0; }
+  .item .note { font-size: .85rem; color: var(--muted); margin-left: 26px; }
+  .item.done .label-text { text-decoration: line-through; color: var(--muted); }
+  .print-only { display: none; }
+  @media print {
+    .print-only { display: block; }
+    .item input { width: 16px; height: 16px; }
+    .item.done .label-text { text-decoration: none; color: inherit; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="page-head no-print">
+    <h1>구비서류 체크리스트</h1>
+    <p>사업을 고르면 신청 서류 목록이 나옵니다. 받은 서류를 체크하거나, 민원인 안내용으로 인쇄하세요.</p>
+  </div>
+
+  <div class="notice no-print">서식·서류는 연도별 사업안내와 지자체에 따라 다를 수 있습니다. 행정정보 공동이용에 동의하면 생략되는 서류가 많으니 먼저 확인하세요.</div>
+
+  <div class="card no-print">
+    <label>사업 선택 (여러 개 선택 가능 — 공통 서류는 한 번만 표시)</label>
+    <div class="chips" id="programs"></div>
+    <div class="row" style="margin-top:12px">
+      <input type="text" id="extra" placeholder="추가로 받을 서류 (예: 병원 진료비 영수증)" style="flex:1;min-width:200px">
+      <button class="btn" id="addExtra">항목 추가</button>
+      <button class="btn" id="reset">체크 초기화</button>
+      <button class="btn primary" onclick="print()">안내문 인쇄</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="print-only">
+      <h1>신청 시 준비하실 서류</h1>
+      <p id="printPrograms"></p>
+    </div>
+    <div id="list"><p class="muted">위에서 사업을 선택하세요.</p></div>
+    <div class="print-only" style="margin-top:24px">
+      <p>※ 행정정보 공동이용에 동의하시면 일부 서류는 담당자가 직접 확인하여 제출하지 않으셔도 됩니다.<br>
+      ※ 문의: ____________ 주민센터 맞춤형복지팀 ☎ ____________</p>
+    </div>
+  </div>
+</main>
+
+<script src="assets/common.js"></script>
+<script>
+// 공통 서류는 같은 key를 쓰면 여러 사업을 골라도 한 번만 나옵니다.
+const COMMON = {
+  apply: { text: "사회보장급여 신청(변경)서", note: "신청인 서명. 대리 신청 시 위임장·대리인 신분증" },
+  report: { text: "소득·재산 신고서", note: "가구원 전원 기준" },
+  finance: { text: "금융정보 등 제공 동의서", note: "가구원 전원(부양의무자 조사 대상이면 부양의무자 포함) 서명" },
+  id: { text: "신분증", note: "주민등록증, 운전면허증 등" },
+  bank: { text: "통장 사본", note: "본인(수급자) 명의. 압류방지 전용통장 안내 가능" },
+  lease: { text: "임대차계약서 사본", note: "전·월세 거주 시" },
+  incomeProof: { text: "소득 확인 서류", note: "근로소득: 급여명세서·근로계약서 / 사업소득: 사업자 관련 서류 (공적자료로 확인 안 될 때)" },
+  consent: { text: "행정정보 공동이용 사전동의서", note: "동의 시 주민등록·가족관계 등 서류 생략" },
+};
+
+const PROGRAMS = {
+  "기초생활보장": ["apply", "report", "finance", "consent", "id", "bank", "lease", "incomeProof",
+    { text: "진단서 및 진료기록", note: "근로능력평가 대상자(질병·부상)인 경우" },
+    { text: "부양의무자 관련 서류", note: "가족관계 단절·부양 거부 시 해당 소명 자료" }],
+  "기초연금": ["apply", "report", "finance", "consent", "id", "bank", "lease",
+    { text: "배우자 신분증 사본", note: "배우자가 있는 경우 (동의서 서명 필요)" }],
+  "아동수당·부모급여": ["apply", "id", "bank", "consent",
+    { text: "출생신고 동시 처리", note: "출생신고와 함께 신청하면 별도 서류 최소화 (행복출산 원스톱)" }],
+  "긴급지원": ["id", "bank", "finance",
+    { text: "긴급지원 신청서", note: "선지원 후 조사 — 필요 시 담당자가 직권 신청" },
+    { text: "위기사유 확인 서류", note: "실직: 퇴직증명·이직확인 / 질병: 진단서·진료비 영수증 / 사망: 사망진단서 / 화재: 화재증명원 등" },
+    { text: "임대차계약서·체납 고지서", note: "주거지원·공과금 체납 관련 시" }],
+  "장애인 등록": ["id", "consent",
+    { text: "장애정도심사용 진단서", note: "장애 유형별 서식, 전문의 발급" },
+    { text: "진료기록지·검사결과지", note: "장애 유형별 필요 자료 (지침 확인)" },
+    { text: "사진 1~2매", note: "3×4cm, 최근 6개월 이내 (복지카드 발급용)" }],
+  "장애인연금·장애수당": ["apply", "report", "finance", "consent", "id", "bank", "lease"],
+  "한부모가족": ["apply", "report", "finance", "consent", "id", "bank", "lease", "incomeProof",
+    { text: "한부모 사유 확인 서류", note: "이혼·사별은 가족관계 공동이용, 미혼·유기 등은 사실확인서 등" }],
+  "주거급여(수선유지)": ["apply", "report", "finance", "consent", "id", "bank",
+    { text: "건물 등기부등본 또는 소유 확인", note: "자가가구 수선유지급여" }],
+};
+
+const $ = (id) => document.getElementById(id);
+let selected = new Set();
+let checked = new Set();
+let extras = [];
+
+$("programs").innerHTML = Object.keys(PROGRAMS).map((p) => `<button class="chip" data-p="${p}">${p}</button>`).join("");
+
+function items() {
+  const seen = new Set(), out = [];
+  for (const p of selected) {
+    for (const it of PROGRAMS[p]) {
+      const key = typeof it === "string" ? it : p + ":" + it.text;
+      const obj = typeof it === "string" ? COMMON[it] : it;
+      if (seen.has(key)) { out.find((o) => o.key === key).programs.push(p); continue; }
+      seen.add(key);
+      out.push({ key, ...obj, programs: [p] });
+    }
+  }
+  extras.forEach((t, i) => out.push({ key: "extra:" + i, text: t, note: "추가 항목", programs: [] }));
+  return out;
+}
+
+function render() {
+  document.querySelectorAll("#programs .chip").forEach((c) => c.classList.toggle("on", selected.has(c.dataset.p)));
+  $("printPrograms").textContent = [...selected].join(", ");
+  const list = items();
+  if (!list.length) { $("list").innerHTML = '<p class="muted">위에서 사업을 선택하세요.</p>'; return; }
+  const done = list.filter((i) => checked.has(i.key)).length;
+  $("list").innerHTML = `<div class="row no-print" style="margin-bottom:8px"><b>서류 ${list.length}종</b><span class="badge ${done === list.length ? "ok" : ""}">${done}/${list.length} 확인</span></div>` +
+    list.map((i) => `<div class="item${checked.has(i.key) ? " done" : ""}">
+      <label class="check"><input type="checkbox" data-k="${App.esc(i.key)}"${checked.has(i.key) ? " checked" : ""}>
+      <span class="label-text">${App.esc(i.text)}</span>
+      ${selected.size > 1 && i.programs.length ? i.programs.map((p) => `<span class="badge no-print">${p}</span>`).join("") : ""}</label>
+      ${i.note ? `<div class="note">${App.esc(i.note)}</div>` : ""}</div>`).join("");
+}
+
+$("programs").addEventListener("click", (e) => {
+  const c = e.target.closest("[data-p]");
+  if (!c) return;
+  selected.has(c.dataset.p) ? selected.delete(c.dataset.p) : selected.add(c.dataset.p);
+  render();
+});
+$("list").addEventListener("change", (e) => {
+  const k = e.target.dataset.k;
+  if (!k) return;
+  e.target.checked ? checked.add(k) : checked.delete(k);
+  render();
+});
+$("addExtra").addEventListener("click", () => {
+  const t = $("extra").value.trim();
+  if (!t) return;
+  extras.push(t);
+  $("extra").value = "";
+  render();
+});
+$("extra").addEventListener("keydown", (e) => { if (e.key === "Enter") $("addExtra").click(); });
+$("reset").addEventListener("click", () => { checked.clear(); extras = []; render(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>참조문서 검색 · 복지업무 도우미</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <div class="page-head">
+    <h1>참조문서 검색</h1>
+    <p>법령·사업안내·신청 사이트와 내가 등록한 문서를 한 번에 찾고, 결과를 분류별로 정리합니다.</p>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <input type="search" id="q" placeholder="예: 부양의무자, 이의신청, 주거급여 기준임대료" style="flex:1;min-width:220px" autofocus>
+      <button class="btn primary" id="copyResults">결과 목록 복사</button>
+    </div>
+    <div class="chips" id="cats" style="margin-top:12px"></div>
+    <div class="row" style="margin-top:10px">
+      <label class="check"><input type="checkbox" id="onlyFav"> 즐겨찾기만</label>
+      <span class="spacer"></span>
+      <small id="count"></small>
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns:minmax(0,1fr) 300px" id="layout">
+    <div class="card" id="results"></div>
+
+    <aside>
+      <div class="card">
+        <h2>외부 사이트에서 찾기</h2>
+        <p class="muted" style="font-size:.88rem">위 검색어로 새 창에서 검색합니다. 최신 사업안내 원문은 여기서 확인하세요.</p>
+        <div class="stack" id="external"></div>
+      </div>
+
+      <div class="card">
+        <h2>내 문서 등록</h2>
+        <p class="muted" style="font-size:.88rem">공문, 지침 PDF 위치, 내부 매뉴얼 등을 등록해 두면 함께 검색됩니다. 이 PC 브라우저에만 저장됩니다.</p>
+        <form id="addForm">
+          <div class="field"><label for="fTitle">제목 *</label><input type="text" id="fTitle" required></div>
+          <div class="field"><label for="fUrl">링크 또는 파일 위치</label><input type="text" id="fUrl" placeholder="https://… 또는 \\서버\공유\지침.pdf"></div>
+          <div class="field"><label for="fCat">분류</label><select id="fCat"></select></div>
+          <div class="field"><label for="fTags">키워드 (쉼표로 구분)</label><input type="text" id="fTags" placeholder="긴급지원, 2026, 공문"></div>
+          <div class="field"><label for="fMemo">메모·요약</label><textarea id="fMemo" placeholder="핵심 내용, 쪽수, 시행일 등"></textarea></div>
+          <div class="row">
+            <button class="btn primary" type="submit" id="fSubmit">등록</button>
+            <button class="btn" type="button" id="fCancel" hidden>취소</button>
+          </div>
+        </form>
+        <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+        <div class="row">
+          <button class="btn sm" id="exportBtn">내 문서 내보내기</button>
+          <label class="btn sm" style="margin:0;font-weight:400">가져오기<input type="file" id="importFile" accept=".json" hidden></label>
+        </div>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<script src="assets/common.js"></script>
+<script src="assets/docs-data.js"></script>
+<script>
+const CATS = ["법령", "지침·사업안내", "신청·조회", "기관·연계", "서식·자료", "내 문서"];
+// 같은 뜻으로 자주 쓰는 말
+const SYNONYMS = {
+  "기초수급": "기초생활", "수급자": "기초생활", "생계비": "생계급여", "의료비": "의료급여",
+  "월세": "주거급여", "집수리": "수선유지", "노령연금": "기초연금", "어르신": "노인",
+  "위기가구": "긴급지원", "실직": "긴급지원", "불복": "이의신청", "소송": "행정소송",
+};
+
+let myDocs = App.load("myDocs", []);
+let favs = new Set(App.load("favDocs", []));
+let activeCat = "전체";
+let editingId = null;
+
+const $ = (id) => document.getElementById(id);
+$("fCat").innerHTML = CATS.map((c) => `<option${c === "내 문서" ? " selected" : ""}>${c}</option>`).join("");
+
+function allDocs() {
+  const base = DOC_CATALOG.map((d, i) => ({ ...d, id: "base-" + i, mine: false }));
+  const mine = myDocs.map((d) => ({ ...d, mine: true }));
+  return base.concat(mine);
+}
+
+function terms(q) {
+  return q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+function score(doc, ts) {
+  if (!ts.length) return 1;
+  const fields = [
+    [doc.title, 5], [(doc.tags || []).join(" "), 3], [doc.memo || "", 2], [doc.desc || "", 1], [doc.org || "", 1],
+  ];
+  let total = 0;
+  for (const t of ts) {
+    const alts = [t, SYNONYMS[t]].filter(Boolean).map((s) => s.toLowerCase());
+    let best = 0;
+    for (const [text, w] of fields) {
+      const lower = String(text).toLowerCase();
+      if (alts.some((a) => lower.includes(a))) best = Math.max(best, w);
+    }
+    if (!best) return 0; // 모든 검색어가 어딘가에 있어야 함
+    total += best;
+  }
+  return total;
+}
+
+function highlight(text, ts) {
+  let html = App.esc(text);
+  const words = ts.flatMap((t) => [t, SYNONYMS[t]]).filter(Boolean)
+    .sort((a, b) => b.length - a.length).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!words.length) return html;
+  return html.replace(new RegExp("(" + words.map(App.esc).join("|") + ")", "gi"), "<mark>$1</mark>");
+}
+
+let lastResults = [];
+
+function render() {
+  const q = $("q").value;
+  const ts = terms(q);
+  const counts = { 전체: 0 };
+  const scored = allDocs()
+    .map((d) => ({ d, s: score(d, ts) }))
+    .filter((x) => x.s > 0 && (!$("onlyFav").checked || favs.has(x.d.id)));
+  for (const { d } of scored) {
+    const c = d.mine && !CATS.includes(d.category) ? "내 문서" : d.category;
+    counts[c] = (counts[c] || 0) + 1;
+    counts.전체++;
+  }
+
+  $("cats").innerHTML = ["전체", ...CATS].map((c) =>
+    `<button class="chip${c === activeCat ? " on" : ""}" data-cat="${c}">${c} ${counts[c] || 0}</button>`).join("");
+
+  const shown = scored.filter((x) => activeCat === "전체" || x.d.category === activeCat)
+    .sort((a, b) => b.s - a.s || a.d.title.localeCompare(b.d.title, "ko"));
+  lastResults = shown.map((x) => x.d);
+  $("count").textContent = `${shown.length}건`;
+
+  if (!shown.length) {
+    $("results").innerHTML = `<p class="muted">검색 결과가 없습니다. 오른쪽 '외부 사이트에서 찾기'로 원문을 검색해 보세요.</p>`;
+    return;
+  }
+
+  const groups = {};
+  for (const { d } of shown) (groups[d.category] ||= []).push(d);
+  $("results").innerHTML = CATS.filter((c) => groups[c]).map((c) => `
+    <div class="group-title"><h2 style="margin:0">${c}</h2><span class="badge">${groups[c].length}</span></div>
+    ${groups[c].map((d) => {
+      const isUrl = /^https?:\/\//.test(d.url || "");
+      const titleHtml = highlight(d.title, ts);
+      return `<div class="result">
+        <div class="row">
+          <button class="btn ghost sm" data-fav="${d.id}" title="즐겨찾기" aria-label="즐겨찾기">${favs.has(d.id) ? "★" : "☆"}</button>
+          ${isUrl ? `<a class="title" href="${App.esc(d.url)}" target="_blank" rel="noopener">${titleHtml}</a>` : `<span class="title">${titleHtml}</span>`}
+          ${d.mine ? '<span class="badge primary">내 문서</span>' : ""}
+          <span class="spacer"></span>
+          ${d.url ? `<button class="btn sm" data-copy="${App.esc(d.url)}">링크 복사</button>` : ""}
+          ${d.mine ? `<button class="btn sm" data-edit="${d.id}">수정</button><button class="btn sm" data-del="${d.id}">삭제</button>` : ""}
+        </div>
+        <div class="meta">${App.esc(d.org || "")}${!isUrl && d.url ? " · " + App.esc(d.url) : ""}</div>
+        ${d.desc ? `<p class="desc">${highlight(d.desc, ts)}</p>` : ""}
+        ${d.memo ? `<p class="desc">📝 ${highlight(d.memo, ts)}</p>` : ""}
+        ${(d.tags || []).length ? `<div class="chips" style="margin-top:6px">${d.tags.map((t) => `<span class="badge">${highlight(t, ts)}</span>`).join("")}</div>` : ""}
+      </div>`;
+    }).join("")}
+  `).join("");
+}
+
+function renderExternal() {
+  const q = $("q").value.trim();
+  $("external").innerHTML = EXTERNAL_SEARCH.map((s) =>
+    `<a class="btn" style="width:100%;justify-content:space-between" target="_blank" rel="noopener"
+      href="${q ? s.url.replace("{q}", encodeURIComponent(q)) : s.url.split("?")[0].replace(/\/search$/, "")}">
+      ${s.name}<span aria-hidden="true">↗</span></a>`).join("");
+}
+
+$("q").addEventListener("input", () => {
+  render();
+  renderExternal();
+  history.replaceState(null, "", $("q").value ? "?q=" + encodeURIComponent($("q").value) : location.pathname);
+});
+$("onlyFav").addEventListener("change", render);
+
+$("cats").addEventListener("click", (e) => {
+  const c = e.target.closest("[data-cat]");
+  if (c) { activeCat = c.dataset.cat; render(); }
+});
+
+$("results").addEventListener("click", (e) => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.dataset.fav) {
+    favs.has(t.dataset.fav) ? favs.delete(t.dataset.fav) : favs.add(t.dataset.fav);
+    App.save("favDocs", [...favs]);
+    render();
+  } else if (t.dataset.copy) {
+    App.copy(t.dataset.copy);
+  } else if (t.dataset.del) {
+    if (!confirm("이 문서를 목록에서 삭제할까요?")) return;
+    myDocs = myDocs.filter((d) => d.id !== t.dataset.del);
+    App.save("myDocs", myDocs);
+    render();
+  } else if (t.dataset.edit) {
+    const d = myDocs.find((x) => x.id === t.dataset.edit);
+    editingId = d.id;
+    $("fTitle").value = d.title; $("fUrl").value = d.url || ""; $("fCat").value = d.category;
+    $("fTags").value = (d.tags || []).join(", "); $("fMemo").value = d.memo || "";
+    $("fSubmit").textContent = "수정 저장"; $("fCancel").hidden = false;
+    $("fTitle").focus();
+  }
+});
+
+function resetForm() {
+  editingId = null;
+  $("addForm").reset();
+  $("fCat").value = "내 문서";
+  $("fSubmit").textContent = "등록"; $("fCancel").hidden = true;
+}
+$("fCancel").addEventListener("click", resetForm);
+
+$("addForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const doc = {
+    id: editingId || "my-" + Date.now(),
+    title: $("fTitle").value.trim(),
+    url: $("fUrl").value.trim(),
+    category: $("fCat").value,
+    org: "내 문서",
+    tags: $("fTags").value.split(",").map((s) => s.trim()).filter(Boolean),
+    memo: $("fMemo").value.trim(),
+  };
+  myDocs = editingId ? myDocs.map((d) => (d.id === editingId ? doc : d)) : myDocs.concat(doc);
+  App.save("myDocs", myDocs);
+  App.toast(editingId ? "수정했습니다" : "등록했습니다");
+  resetForm();
+  render();
+});
+
+$("copyResults").addEventListener("click", () => {
+  const q = $("q").value.trim();
+  const lines = [`[참조문서 검색 결과] ${q ? "검색어: " + q : "전체"} (${lastResults.length}건)`, ""];
+  let cat = "";
+  for (const d of lastResults) {
+    if (d.category !== cat) { cat = d.category; lines.push(`■ ${cat}`); }
+    lines.push(`- ${d.title}${d.url ? " : " + d.url : ""}`);
+  }
+  App.copy(lines.join("\n"));
+});
+
+$("exportBtn").addEventListener("click", () => {
+  App.download(`내문서_${App.ymd(new Date())}.json`, JSON.stringify(myDocs, null, 2));
+});
+$("importFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const list = JSON.parse(await file.text());
+    if (!Array.isArray(list)) throw 0;
+    const ids = new Set(myDocs.map((d) => d.id));
+    const added = list.filter((d) => d && d.title && !ids.has(d.id));
+    myDocs = myDocs.concat(added);
+    App.save("myDocs", myDocs);
+    App.toast(`${added.length}건을 가져왔습니다`);
+    render();
+  } catch (err) {
+    alert("파일 형식이 올바르지 않습니다.");
+  }
+  e.target.value = "";
+});
+
+// 좁은 화면에서는 한 줄로
+const mq = matchMedia("(max-width: 860px)");
+const applyLayout = () => ($("layout").style.gridTemplateColumns = mq.matches ? "1fr" : "minmax(0,1fr) 300px");
+mq.addEventListener("change", applyLayout);
+applyLayout();
+
+$("q").value = new URLSearchParams(location.search).get("q") || "";
+render();
+renderExternal();
+</script>
+</body>
+</html>

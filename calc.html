@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>선정기준 계산 · 복지업무 도우미</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <div class="page-head">
+    <h1>선정기준 계산</h1>
+    <p>가구원 수별 기준 중위소득과 급여별 선정기준을 보고, 소득인정액과 비교합니다.</p>
+  </div>
+
+  <div id="verifyNote"></div>
+
+  <div class="card">
+    <div class="grid grid-3">
+      <div><label for="year">기준 연도</label><select id="year"></select></div>
+      <div><label for="size">가구원 수</label><select id="size"></select></div>
+      <div><label for="custom">기준 중위소득 ○% 직접 입력</label><input type="number" id="custom" min="1" max="300" placeholder="예: 60"></div>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h2>선정기준 (월)</h2>
+      <div class="table-wrap" id="table"></div>
+      <p class="muted" style="font-size:.85rem;margin:8px 0 0" id="src"></p>
+    </div>
+
+    <div class="card">
+      <h2>소득인정액 비교</h2>
+      <div class="field">
+        <label for="income">가구 소득인정액 (월, 원)</label>
+        <input type="number" id="income" min="0" step="1000" placeholder="행복이음 조사 결과 또는 아래 간이 추정값">
+      </div>
+      <div id="compare"><p class="muted">소득인정액을 입력하면 급여별 해당 여부와 생계급여 예상액을 보여줍니다.</p></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>소득인정액 간이 추정 <span class="badge warn">참고용</span></h2>
+    <p class="muted" style="font-size:.88rem">상담 전 대략적인 가능성을 보는 용도입니다. 실제 산정(주거용재산 한도, 자동차, 부채 인정 범위, 공제 대상별 비율, 부양비 등)은 사업안내와 행복이음 결과를 따르세요.</p>
+    <div class="grid grid-3">
+      <div class="field"><label for="earned">근로·사업소득 (월)</label><input type="number" id="earned" min="0" step="10000" value="0"></div>
+      <div class="field"><label for="other">기타소득 (공적이전 등, 월)</label><input type="number" id="other" min="0" step="10000" value="0"></div>
+      <div class="field"><label for="region">거주 지역</label><select id="region"></select></div>
+      <div class="field"><label for="general">일반재산 (주택·전월세보증금 등)</label><input type="number" id="general" min="0" step="1000000" value="0"></div>
+      <div class="field"><label for="financial">금융재산</label><input type="number" id="financial" min="0" step="100000" value="0"></div>
+      <div class="field"><label for="debt">인정 부채</label><input type="number" id="debt" min="0" step="1000000" value="0"></div>
+    </div>
+    <div class="row">
+      <div class="spacer"><div class="muted" style="font-size:.88rem" id="estDetail"></div></div>
+      <div style="text-align:right"><small>추정 소득인정액</small><div class="big-num" id="estTotal">-</div></div>
+      <button class="btn primary" id="useEst">위 비교에 적용</button>
+    </div>
+  </div>
+</main>
+
+<script src="assets/common.js"></script>
+<script src="assets/data.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const D = WELFARE_DATA;
+const years = Object.keys(D.medianIncome).map(Number).sort();
+const thisYear = new Date().getFullYear();
+$("year").innerHTML = years.map((y) => `<option value="${y}"${y === thisYear ? " selected" : ""}>${y}년</option>`).join("");
+$("size").innerHTML = Array.from({ length: 10 }, (_, i) => `<option value="${i + 1}">${i + 1}인 가구</option>`).join("");
+$("region").innerHTML = Object.keys(D.asset.basicDeduction).map((r) => `<option>${r}</option>`).join("");
+
+// 7인 이상은 6인 + (6인-5인)×추가인원
+function median(year, n) {
+  const a = D.medianIncome[year].amounts;
+  if (n <= 6) return a[n] ?? null;
+  if (a[5] == null || a[6] == null) return null;
+  return a[6] + (a[6] - a[5]) * (n - 6);
+}
+
+function rows() {
+  const y = D.medianIncome[$("year").value];
+  const list = Object.entries(y.rates).map(([name, rate]) => ({ name, rate, main: true }));
+  D.extraRates.forEach((r) => list.push(r));
+  const c = Number($("custom").value);
+  if (c > 0) list.push({ name: "직접 입력", rate: c });
+  return list;
+}
+
+function render() {
+  const year = $("year").value, n = Number($("size").value);
+  const y = D.medianIncome[year];
+  const m = median(year, n);
+  $("verifyNote").innerHTML = y.verified ? "" :
+    `<div class="notice">⚠ ${year}년 값은 아직 확인되지 않았거나 일부만 입력되어 있습니다. <code>assets/data.js</code>를 고시 원문으로 채워 주세요.</div>`;
+  $("src").textContent = "출처: " + y.source + " · 원 단위 버림";
+
+  $("table").innerHTML = `<table><thead><tr><th>구분</th><th class="num">비율</th><th class="num">${n}인 가구</th></tr></thead><tbody>
+    <tr><td><b>기준 중위소득</b></td><td class="num">100%</td><td class="num"><b>${m == null ? "미입력" : App.won(m)}</b></td></tr>
+    ${rows().map((r) => `<tr><td>${r.name}</td><td class="num">${r.rate}%</td>
+      <td class="num">${m == null ? "-" : App.won(Math.floor(m * r.rate / 100))}</td></tr>`).join("")}
+  </tbody></table>`;
+  compare();
+}
+
+function compare() {
+  const v = $("income").value;
+  const m = median($("year").value, Number($("size").value));
+  if (v === "" || m == null) {
+    $("compare").innerHTML = `<p class="muted">${m == null ? "선택한 연도·가구원 수의 기준 중위소득이 입력되지 않았습니다." : "소득인정액을 입력하면 급여별 해당 여부와 생계급여 예상액을 보여줍니다."}</p>`;
+    return;
+  }
+  const inc = Number(v);
+  const pct = (inc / m) * 100;
+  const list = rows().map((r) => {
+    const line = Math.floor(m * r.rate / 100);
+    const ok = inc <= line;
+    return `<tr><td>${r.name}</td><td class="num">${App.won(line)}</td>
+      <td><span class="badge ${ok ? "ok" : "bad"}">${ok ? "기준 이하" : "초과"}</span></td></tr>`;
+  }).join("");
+  const livelihood = Math.floor(m * D.medianIncome[$("year").value].rates.생계급여 / 100);
+  const pay = Math.max(0, livelihood - inc);
+  $("compare").innerHTML = `
+    <p>소득인정액은 기준 중위소득의 <b>${pct.toFixed(1)}%</b> 입니다.</p>
+    <div class="table-wrap"><table><thead><tr><th>구분</th><th class="num">선정기준</th><th>판정</th></tr></thead><tbody>${list}</tbody></table></div>
+    <div class="card" style="background:var(--surface-2);margin:12px 0 0">
+      <small>생계급여 예상액 (선정기준 − 소득인정액)</small>
+      <div class="big-num">${pay > 0 ? App.won(pay) : "해당 없음"}</div>
+      <small>타 급여·주거급여 중복 시 차감, 부양비, 시설 수급 등은 반영되지 않았습니다.</small>
+    </div>`;
+}
+
+function estimate() {
+  const A = D.asset;
+  const num = (id) => Math.max(0, Number($(id).value) || 0);
+  const incomeEval = num("earned") * (1 - A.earnedIncomeDeduction) + num("other");
+  let deduct = A.basicDeduction[$("region").value];
+  // 기본재산공제는 일반재산 → 금융재산 순서로 적용 (간이)
+  let general = num("general") - num("debt");
+  const g1 = Math.min(Math.max(general, 0), deduct);
+  deduct -= g1;
+  general = Math.max(0, general - g1);
+  let fin = Math.max(0, num("financial") - A.financialDeduction);
+  const f1 = Math.min(fin, deduct);
+  fin -= f1;
+  const assetIncome = general * A.monthlyRate.일반재산 + fin * A.monthlyRate.금융재산;
+  const total = Math.floor(incomeEval + assetIncome);
+  $("estTotal").textContent = App.won(total);
+  $("estDetail").innerHTML = `소득평가액 ${App.won(incomeEval)} (근로소득 ${A.earnedIncomeDeduction * 100}% 공제)<br>
+    재산의 소득환산액 ${App.won(assetIncome)} (공제 후 일반재산 ${App.won(general)} × ${(A.monthlyRate.일반재산 * 100).toFixed(2)}%, 금융재산 ${App.won(fin)} × ${(A.monthlyRate.금융재산 * 100).toFixed(2)}%)`;
+  return total;
+}
+
+["year", "size", "custom"].forEach((id) => $(id).addEventListener("input", render));
+$("income").addEventListener("input", compare);
+["earned", "other", "region", "general", "financial", "debt"].forEach((id) => $(id).addEventListener("input", estimate));
+$("useEst").addEventListener("click", () => { $("income").value = estimate(); compare(); $("income").scrollIntoView({ block: "center" }); });
+
+render();
+estimate();
+</script>
+</body>
+</html>
