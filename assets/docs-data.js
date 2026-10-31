@@ -16,6 +16,9 @@ window.DOC_CATALOG = [
 
   // 지침·사업안내
   { title: "보건복지부 법령·자료 (사업안내 게시)", org: "보건복지부", category: "지침·사업안내", url: "https://www.mohw.go.kr", tags: ["사업안내", "지침", "국민기초생활보장사업안내", "기초연금", "긴급지원", "자활"], desc: "매년 초 '국민기초생활보장사업 안내', '긴급지원사업 안내', '기초연금 사업안내' 등이 게시됨. 정보 > 법령·자료 메뉴" },
+  { title: "보건복지부 훈령·예규·고시·지침 게시판 (사업안내 PDF)", org: "보건복지부", category: "지침·사업안내", url: "https://www.mohw.go.kr/board.es?mid=a10409020000&bid=0026&act=list&keyField=TITLE&keyWord=" + encodeURIComponent("사업안내"), tags: ["사업안내", "지침", "기초연금", "장애인연금", "장애인복지", "아동분야", "자활", "긴급지원 고시", "PDF"], desc: "기초연금·장애인·아동분야·자활 사업안내 원문(PDF·HWPX)과 긴급지원 금액·위기사유 고시 게시" },
+  { title: "성평등가족부 정책·사업 안내", org: "성평등가족부", category: "지침·사업안내", url: "https://www.mogef.go.kr", tags: ["성평등가족부", "여성가족부", "한부모", "청소년한부모", "아이돌봄", "가정폭력", "성폭력", "위기청소년", "학교 밖 청소년", "다문화가족"], desc: "한부모가족·아이돌봄·청소년·폭력피해자 지원 사업별 지원대상과 금액 안내 (구 여성가족부)" },
+  { title: "여성긴급전화 1366", org: "성평등가족부", category: "기관·연계", url: "https://www.mogef.go.kr/sp/hrp/sp_hrp_f002.do", tags: ["1366", "가정폭력", "성폭력", "교제폭력", "긴급상담"], desc: "가정폭력·성폭력·교제폭력 피해 24시간 상담 및 보호시설 연계 (국번없이 1366)" },
   { title: "주거급여 사업안내 (국토교통부)", org: "국토교통부", category: "지침·사업안내", url: "https://www.molit.go.kr", tags: ["주거급여", "기준임대료", "수선유지", "급지"], desc: "주거급여 선정기준·기준임대료·수선유지급여 기준" },
   { title: "찾기쉬운 생활법령정보", org: "법제처", category: "지침·사업안내", url: "https://www.easylaw.go.kr", tags: ["생활법령", "민원 안내", "쉬운 설명"], desc: "민원인에게 설명할 때 참고하기 좋은 쉬운 법령 해설" },
 
@@ -44,6 +47,7 @@ window.EXTERNAL_SEARCH = [
   { name: "보건복지부 자료 (구글)", url: "https://www.google.com/search?q=site%3Amohw.go.kr+{q}" },
   { name: "사업안내 PDF (구글)", url: "https://www.google.com/search?q={q}+%EC%82%AC%EC%97%85%EC%95%88%EB%82%B4+filetype%3Apdf" },
   { name: "복지로 (구글)", url: "https://www.google.com/search?q=site%3Abokjiro.go.kr+{q}" },
+  { name: "성평등가족부 (구글)", url: "https://www.google.com/search?q=site%3Amogef.go.kr+{q}" },
   { name: "생활법령 (구글)", url: "https://www.google.com/search?q=site%3Aeasylaw.go.kr+{q}" },
   { name: "정책브리핑 (구글)", url: "https://www.google.com/search?q=site%3Akorea.kr+{q}" },
 ];
